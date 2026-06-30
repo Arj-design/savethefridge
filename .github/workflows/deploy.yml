@@ -36,6 +36,14 @@ jobs:
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
+      - name: Verify web assets were copied
+        run: |
+          echo "=== Assets folder contents ==="
+          ls -la android/app/src/main/assets/ || echo "Assets folder missing!"
+          ls -la android/app/src/main/assets/public/ || echo "Public folder missing!"
+          echo "=== APK web asset count ==="
+          find android/app/src/main/assets/public -type f | wc -l || echo "0 files found"
+          
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
