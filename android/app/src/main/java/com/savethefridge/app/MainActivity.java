@@ -1,5 +1,18 @@
 package com.savethefridge.app;
 
+import android.webkit.PermissionRequest;
+import android.webkit.WebChromeClient;
 import com.getcapacitor.BridgeActivity;
 
-public class MainActivity extends BridgeActivity {}
+public class MainActivity extends BridgeActivity {
+    @Override
+    protected void onStart() {
+        super.onStart();
+        this.bridge.getWebView().setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                request.grant(request.getResources());
+            }
+        });
+    }
+}
