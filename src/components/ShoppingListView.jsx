@@ -24,9 +24,6 @@ export default function ShoppingListView() {
     setNewItem('');
   };
 
-  // Build the suggestion list: recently removed products + currently expired
-  // ones still sitting in the fridge, minus items already in the list and
-  // minus suggestions the user dismissed.
   const suggestions = useMemo(() => {
     const inListNames = new Set(
       shoppingList.filter(i => !i.checked).map(i => i.name.toLowerCase())
@@ -35,14 +32,11 @@ export default function ShoppingListView() {
 
     const fromExpired = products
       .filter(p => getDaysUntilExpiry(p.expiryDate) < 0)
-      .map(p => ({
-        name: p.name,
-        reason: 'Expired in your fridge'
-      }));
+      .map(p => ({ name: p.name, reason: 'Scaduto nel frigo' }));
 
     const fromRemoved = removedHistory.map(item => ({
       name: item.name,
-      reason: 'Recently removed'
+      reason: 'Rimosso di recente'
     }));
 
     const combined = [...fromExpired, ...fromRemoved];
@@ -69,26 +63,25 @@ export default function ShoppingListView() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
           <ShoppingCart className="w-6 h-6 text-indigo-500" />
-          Shopping List
+          Lista della Spesa
         </h2>
         {checkedItems.length > 0 && (
           <button
             onClick={clearCheckedShoppingItems}
             className="text-sm font-medium text-red-500 hover:text-red-600"
           >
-            Clear bought
+            Rimuovi acquistati
           </button>
         )}
       </div>
 
-      {/* Add item form */}
       <form onSubmit={handleAdd} className="card">
         <div className="p-4 flex gap-3">
           <input
             type="text"
             value={newItem}
             onChange={(e) => setNewItem(e.target.value)}
-            placeholder="Add an item..."
+            placeholder="Aggiungi un articolo..."
             className="input flex-1"
           />
           <button
@@ -101,13 +94,12 @@ export default function ShoppingListView() {
         </div>
       </form>
 
-      {/* Suggestions */}
       {suggestions.length > 0 && (
         <div className="card">
           <div className="p-4">
             <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3">
               <Sparkles className="w-4 h-4 text-yellow-500" />
-              Suggested for you
+              Suggeriti per te
             </h3>
             <div className="flex flex-wrap gap-2">
               {suggestions.map((s) => (
@@ -126,7 +118,7 @@ export default function ShoppingListView() {
                   <button
                     onClick={() => dismissSuggestion(s.name)}
                     className="p-1 text-indigo-400 hover:text-indigo-600 transition-colors"
-                    title="Dismiss"
+                    title="Ignora"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -137,15 +129,14 @@ export default function ShoppingListView() {
         </div>
       )}
 
-      {/* List */}
       {shoppingList.length === 0 ? (
         <div className="text-center py-16 animate-fade-in">
           <ShoppingCart className="w-20 h-20 mx-auto mb-4 text-gray-300" />
           <h3 className="text-lg font-semibold text-gray-800 mb-1">
-            Your shopping list is empty
+            La lista è vuota
           </h3>
           <p className="text-gray-600 text-sm">
-            Add items manually or use a suggestion above
+            Aggiungi articoli manualmente o usa i suggerimenti sopra
           </p>
         </div>
       ) : (
@@ -162,7 +153,7 @@ export default function ShoppingListView() {
                 <span className="flex-1 text-gray-900">{item.name}</span>
                 {item.source === 'auto' && (
                   <span className="text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full">
-                    suggested
+                    suggerito
                   </span>
                 )}
                 <button
