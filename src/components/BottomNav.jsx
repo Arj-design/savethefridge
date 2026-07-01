@@ -6,9 +6,9 @@ export default function BottomNav() {
 
   const navItems = [
     { id: 'fridge', label: 'Fridge', icon: Refrigerator },
-    { id: 'gallery', label: 'Gallery', icon: LayoutGrid },
-    { id: 'shopping', label: 'List', icon: ShoppingCart },
-    { id: 'recipes', label: 'Recipes', icon: ChefHat },
+    { id: 'gallery', label: 'Apri Frigo', icon: LayoutGrid },
+    { id: 'shopping', label: 'Lista', icon: ShoppingCart },
+    { id: 'recipes', label: 'Ricette', icon: ChefHat },
   ];
 
   return (
