@@ -81,12 +81,16 @@ export function AppProvider({ children }) {
     setNotifications(newNotifications);
 
     if (newNotifications.length > 0 && Notification.permission === 'granted') {
-      const count = newNotifications.length;
-      new Notification('SaveTheFridge Alert', {
-        body: `${count} prodott${count > 1 ? 'i' : 'o'} in scadenza!`,
-        icon: '/vite.svg',
-        badge: '/vite.svg'
-      });
+  const count = newNotifications.length;
+  try {
+    new Notification('SaveTheFridge Alert', {
+      body: `${count} prodott${count > 1 ? 'i' : 'o'} in scadenza!`,
+      icon: '/vite.svg',
+      badge: '/vite.svg'
+    });
+  } catch (notifError) {
+    console.error('Notification error:', notifError);
+  }
 
       const expiringProducts = products.filter(p =>
         newNotifications.some(n => n.id === p.id)
