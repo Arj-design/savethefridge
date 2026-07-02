@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Capacitor } from '@capacitor/core';
-import { X, Search, Camera, Lightbulb, ScanLine } from 'lucide-react';
+import { X, Search, Camera, Lightbulb, ScanLine, PenLine, ArrowRight } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { fetchProductInfo } from '../utils/productUtils';
 
@@ -14,6 +14,10 @@ export default function ScanView() {
   const [manualBarcode, setManualBarcode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Form inserimento manuale prodotto
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualBrand, setManualBrand] = useState('');
   const html5QrCodeRef = useRef(null);
   const videoStreamRef = useRef(null);
 
@@ -44,16 +48,41 @@ export default function ScanView() {
 
   useEffect(() => () => { cleanupCamera(); }, []);
 
+  // Prodotto trovato → vai ad AddProductView
+  const goToAddProduct = (productInfo) => {
+    setScannedProduct(productInfo);
+    setCurrentView('add');
+  };
+
+  // Prodotto non trovato → mostra form manuale
+  const handleNotFound = () => {
+    setError(null);
+    setShowManualForm(true);
+  };
+
+  // Conferma inserimento manuale
+  const handleManualProductSubmit = (e) => {
+    e.preventDefault();
+    if (!manualName.trim()) return;
+    goToAddProduct({
+      name: manualName.trim(),
+      brand: manualBrand.trim() || '',
+      image: null,
+      quantity: '',
+      barcode: null,
+      isManual: true,
+    });
+  };
+
   const handleBarcodeScanned = async (barcode) => {
     setIsLoading(true);
     setError(null);
     try {
       const productInfo = await fetchProductInfo(barcode);
       if (productInfo) {
-        setScannedProduct(productInfo);
-        setCurrentView('add');
+        goToAddProduct(productInfo);
       } else {
-        setError('Prodotto non trovato. Prova a inserire il codice manualmente.');
+        handleNotFound();
       }
     } catch {
       setError('Errore nel recupero del prodotto. Controlla la connessione.');
@@ -65,16 +94,15 @@ export default function ScanView() {
   const scanWithNativeCamera = async () => {
     setIsCapturing(true);
     setError(null);
+    setShowManualForm(false);
     try {
       const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
-
       const photo = await Camera.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.DataUrl,
         source: CameraSource.Camera,
       });
-
       if (!photo.dataUrl) throw new Error('Nessuna foto acquisita');
 
       const res = await fetch(photo.dataUrl);
@@ -95,7 +123,7 @@ export default function ScanView() {
         const result = await decoder.scanFileV2(file, false);
         await handleBarcodeScanned(result.decodedText);
       } catch {
-        setError('Codice a barre non trovato nella foto. Avvicinati, assicurati che il codice sia ben illuminato e riprova.');
+        setError('Codice a barre non trovato nella foto. Avvicinati e riprova oppure inserisci il prodotto manualmente.');
       } finally {
         try { await decoder.clear(); } catch (_) {}
       }
@@ -112,28 +140,25 @@ export default function ScanView() {
   const startWebScanner = async () => {
     if (isScanning) return;
     setError(null);
+    setShowManualForm(false);
     setIsScanning(true);
     await new Promise(r => setTimeout(r, 100));
-
     if (!document.getElementById('reader')) {
       setError('Inizializzazione scanner fallita. Riprova.');
       setIsScanning(false);
       return;
     }
-
     try {
       const html5QrCode = new Html5Qrcode('reader');
       html5QrCodeRef.current = html5QrCode;
       const devices = await Html5Qrcode.getCameras();
       if (!devices?.length) throw new Error('Nessuna fotocamera trovata');
-
       const back = devices.find(d =>
         d.label.toLowerCase().includes('back') ||
         d.label.toLowerCase().includes('rear') ||
         d.label.toLowerCase().includes('environment')
       );
       const cameraId = back ? back.id : devices[devices.length - 1].id;
-
       await html5QrCode.start(
         cameraId,
         { fps: 10, qrbox: { width: 250, height: 250 } },
@@ -152,19 +177,19 @@ export default function ScanView() {
 
   const stopWebScanner = async () => { await cleanupCamera(); setIsScanning(false); };
 
-  const handleManualSearch = async () => {
+  const handleManualBarcodeSearch = async () => {
     const barcode = manualBarcode.trim();
     if (!barcode) return;
     setIsLoading(true);
     setError(null);
+    setShowManualForm(false);
     try {
       const productInfo = await fetchProductInfo(barcode);
       if (productInfo) {
-        setScannedProduct(productInfo);
-        setManualBarcode('');
-        setCurrentView('add');
+        goToAddProduct(productInfo);
       } else {
-        setError('Prodotto non trovato. Controlla il codice e riprova.');
+        setManualBarcode('');
+        handleNotFound();
       }
     } catch {
       setError('Errore nel recupero del prodotto. Controlla la connessione.');
@@ -173,6 +198,66 @@ export default function ScanView() {
     }
   };
 
+  // ── Form inserimento manuale prodotto ────────────────────────────────────────
+  if (showManualForm) {
+    return (
+      <div className="space-y-5 animate-fade-in">
+        <div className="card">
+          <div className="bg-gradient-to-r from-amber-400 to-orange-500 text-white p-5">
+            <h2 className="text-lg font-bold">Prodotto non trovato</h2>
+            <p className="text-sm text-white/80 mt-1">Inserisci i dati manualmente</p>
+          </div>
+          <form onSubmit={handleManualProductSubmit} className="p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Nome prodotto *
+              </label>
+              <input
+                type="text"
+                value={manualName}
+                onChange={e => setManualName(e.target.value)}
+                placeholder="Es. Latte intero, Pasta barilla..."
+                className="input"
+                autoFocus
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Marca (opzionale)
+              </label>
+              <input
+                type="text"
+                value={manualBrand}
+                onChange={e => setManualBrand(e.target.value)}
+                placeholder="Es. Barilla, Muller..."
+                className="input"
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowManualForm(false)}
+                className="btn btn-secondary flex-1"
+              >
+                Indietro
+              </button>
+              <button
+                type="submit"
+                disabled={!manualName.trim()}
+                className="btn btn-primary flex-1"
+              >
+                <ArrowRight className="w-5 h-5" />
+                <span>Continua</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Schermata principale scanner ─────────────────────────────────────────────
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="card overflow-hidden">
@@ -193,11 +278,10 @@ export default function ScanView() {
                 disabled={isCapturing || isLoading}
                 className="btn btn-primary"
               >
-                {isCapturing ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Camera className="w-5 h-5" />
-                )}
+                {isCapturing
+                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <Camera className="w-5 h-5" />
+                }
                 <span>{isCapturing ? 'Apertura fotocamera...' : 'Apri Fotocamera'}</span>
               </button>
             </div>
@@ -224,13 +308,13 @@ export default function ScanView() {
 
           {error && (
             <div className="mt-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
-              <p className="text-sm font-semibold text-red-800 mb-1">Attenzione</p>
               <p className="text-sm text-red-700">{error}</p>
             </div>
           )}
         </div>
       </div>
 
+      {/* Codice manuale */}
       <div className="card">
         <div className="p-6">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Inserisci Codice Manualmente</h2>
@@ -238,15 +322,15 @@ export default function ScanView() {
             <input
               type="text"
               value={manualBarcode}
-              onChange={(e) => setManualBarcode(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
+              onChange={e => setManualBarcode(e.target.value)}
+              onKeyPress={e => e.key === 'Enter' && handleManualBarcodeSearch()}
               placeholder="Es. 3017620422003"
               className="input flex-1"
               disabled={isLoading}
               inputMode="numeric"
             />
             <button
-              onClick={handleManualSearch}
+              onClick={handleManualBarcodeSearch}
               disabled={isLoading || !manualBarcode.trim()}
               className="btn btn-primary"
             >
@@ -262,6 +346,21 @@ export default function ScanView() {
           </div>
         </div>
       </div>
+
+      {/* Inserimento diretto senza barcode */}
+      <button
+        onClick={() => setShowManualForm(true)}
+        className="w-full card p-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+          <PenLine className="w-5 h-5 text-indigo-500" />
+        </div>
+        <div>
+          <p className="font-semibold text-gray-900 text-sm">Aggiungi senza barcode</p>
+          <p className="text-xs text-gray-500">Inserisci nome e marca manualmente</p>
+        </div>
+        <ArrowRight className="w-4 h-4 text-gray-400 ml-auto" />
+      </button>
     </div>
   );
 }
