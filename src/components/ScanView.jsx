@@ -1,298 +1,264 @@
 import { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Search, Camera, Lightbulb } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { X, Search, Camera, Lightbulb, ScanLine } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { fetchProductInfo } from '../utils/productUtils';
+
+const IS_NATIVE = Capacitor.isNativePlatform();
 
 export default function ScanView() {
   const { setScannedProduct, setCurrentView } = useApp();
   const [isScanning, setIsScanning] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
   const [manualBarcode, setManualBarcode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const html5QrCodeRef = useRef(null);
   const videoStreamRef = useRef(null);
 
-  // Cleanup function to completely stop camera
   const cleanupCamera = async () => {
     try {
-      // Stop html5-qrcode scanner
       if (html5QrCodeRef.current) {
         const scanner = html5QrCodeRef.current;
-        if (scanner.isScanning) {
-          await scanner.stop();
-        }
+        if (scanner.isScanning) await scanner.stop();
         await scanner.clear();
         html5QrCodeRef.current = null;
       }
-
-      // Force stop all video tracks
       if (videoStreamRef.current) {
-        videoStreamRef.current.getTracks().forEach(track => {
-          track.stop();
-          track.enabled = false;
-        });
+        videoStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
         videoStreamRef.current = null;
       }
-
-      // Clear video element
-      const videoElement = document.querySelector('#reader video');
-      if (videoElement) {
-        if (videoElement.srcObject) {
-          const tracks = videoElement.srcObject.getTracks();
-          tracks.forEach(track => {
-            track.stop();
-            track.enabled = false;
-          });
-          videoElement.srcObject = null;
-        }
-        videoElement.load();
+      const video = document.querySelector('#reader video');
+      if (video?.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+        video.load();
       }
-
-      // Clear the reader div
       const readerDiv = document.getElementById('reader');
-      if (readerDiv) {
-        readerDiv.innerHTML = '';
-      }
+      if (readerDiv) readerDiv.innerHTML = '';
     } catch (err) {
-      console.error("Cleanup error:", err);
+      console.error('Cleanup error:', err);
     }
   };
 
-  // Cleanup on unmount or when leaving scan view
-  useEffect(() => {
-    return () => {
-      cleanupCamera();
-    };
-  }, []);
+  useEffect(() => () => { cleanupCamera(); }, []);
 
-  const startScanner = async () => {
+  const handleBarcodeScanned = async (barcode) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const productInfo = await fetchProductInfo(barcode);
+      if (productInfo) {
+        setScannedProduct(productInfo);
+        setCurrentView('add');
+      } else {
+        setError('Prodotto non trovato. Prova a inserire il codice manualmente.');
+      }
+    } catch {
+      setError('Errore nel recupero del prodotto. Controlla la connessione.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const scanWithNativeCamera = async () => {
+    setIsCapturing(true);
+    setError(null);
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+
+      const photo = await Camera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+      });
+
+      if (!photo.dataUrl) throw new Error('Nessuna foto acquisita');
+
+      const res = await fetch(photo.dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], 'scan.jpg', { type: blob.type || 'image/jpeg' });
+
+      const readerId = 'native-barcode-reader';
+      let readerDiv = document.getElementById(readerId);
+      if (!readerDiv) {
+        readerDiv = document.createElement('div');
+        readerDiv.id = readerId;
+        readerDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:400px;height:400px;';
+        document.body.appendChild(readerDiv);
+      }
+
+      const decoder = new Html5Qrcode(readerId);
+      try {
+        const result = await decoder.scanFileV2(file, false);
+        await handleBarcodeScanned(result.decodedText);
+      } catch {
+        setError('Codice a barre non trovato nella foto. Avvicinati, assicurati che il codice sia ben illuminato e riprova.');
+      } finally {
+        try { await decoder.clear(); } catch (_) {}
+      }
+    } catch (err) {
+      const msg = err?.message || '';
+      if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('dismissed')) {
+        setError('Errore fotocamera: ' + msg);
+      }
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const startWebScanner = async () => {
     if (isScanning) return;
-    
     setError(null);
     setIsScanning(true);
+    await new Promise(r => setTimeout(r, 100));
 
-    await new Promise (resolve => setTimeout(resolve,100))
-
-    const readerElement = document.getElementById('reader');
-    if (!readerElement) {
-      setError('Scanner initialization failed. Please try again.');
+    if (!document.getElementById('reader')) {
+      setError('Inizializzazione scanner fallita. Riprova.');
       setIsScanning(false);
       return;
     }
 
     try {
-      const html5QrCode = new Html5Qrcode("reader");
+      const html5QrCode = new Html5Qrcode('reader');
       html5QrCodeRef.current = html5QrCode;
-
-      // Get available cameras
       const devices = await Html5Qrcode.getCameras();
-      
-      if (devices && devices.length > 0) {
-        // Find back camera
-        const backCamera = devices.find(device => 
-          device.label.toLowerCase().includes('back') || 
-          device.label.toLowerCase().includes('rear') ||
-          device.label.toLowerCase().includes('environment')
-        );
-        const cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
-        
-        await html5QrCode.start(
-          cameraId,
-          { 
-            fps: 10,
-            qrbox: { width: 250, height: 250 }
-          },
-          async (decodedText) => {
-            await stopScanner();
-            await handleBarcodeScanned(decodedText);
-          }
-        );
-      } else {
-        throw new Error("No cameras found on device");
-      }
+      if (!devices?.length) throw new Error('Nessuna fotocamera trovata');
+
+      const back = devices.find(d =>
+        d.label.toLowerCase().includes('back') ||
+        d.label.toLowerCase().includes('rear') ||
+        d.label.toLowerCase().includes('environment')
+      );
+      const cameraId = back ? back.id : devices[devices.length - 1].id;
+
+      await html5QrCode.start(
+        cameraId,
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decoded) => { await stopWebScanner(); await handleBarcodeScanned(decoded); }
+      );
     } catch (err) {
-      console.error("Scanner error:", err);
       await cleanupCamera();
-      
-      let errorMsg = "Unable to access camera. ";
-      
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMsg += "Please allow camera permissions in your browser settings.";
-      } else if (err.name === 'NotFoundError' || err.message.includes('No cameras')) {
-        errorMsg += "No camera detected on your device.";
-      } else if (err.name === 'NotReadableError' || err.message.includes('in use')) {
-        errorMsg += "Please close all other apps using the camera and try again.";
-      } else {
-        errorMsg += "Please try manual entry or restart your browser.";
-      }
-      
-      setError(errorMsg);
+      let msg = 'Impossibile accedere alla fotocamera. ';
+      if (err.name === 'NotAllowedError') msg += 'Abilita i permessi della fotocamera.';
+      else if (err.name === 'NotFoundError') msg += 'Nessuna fotocamera rilevata.';
+      else msg += 'Riprova o usa l\'inserimento manuale.';
+      setError(msg);
       setIsScanning(false);
     }
   };
 
-  const stopScanner = async () => {
-    await cleanupCamera();
-    setIsScanning(false);
-  };
-
-  const handleBarcodeScanned = async (barcode) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const productInfo = await fetchProductInfo(barcode);
-      
-      if (productInfo) {
-        setScannedProduct(productInfo);
-        setCurrentView('add');
-      } else {
-        setError('Product not found in database. Try entering the barcode manually.');
-      }
-    } catch (err) {
-      setError('Error fetching product information. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const stopWebScanner = async () => { await cleanupCamera(); setIsScanning(false); };
 
   const handleManualSearch = async () => {
     const barcode = manualBarcode.trim();
     if (!barcode) return;
-
     setIsLoading(true);
     setError(null);
-    
     try {
       const productInfo = await fetchProductInfo(barcode);
-      
       if (productInfo) {
         setScannedProduct(productInfo);
         setManualBarcode('');
         setCurrentView('add');
       } else {
-        setError('Product not found. Check the barcode and try again.');
+        setError('Prodotto non trovato. Controlla il codice e riprova.');
       }
-    } catch (err) {
-      setError('Error fetching product information. Please try again.');
+    } catch {
+      setError('Errore nel recupero del prodotto. Controlla la connessione.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleManualSearch();
-    }
-  };
-
   return (
     <div className="space-y-5 animate-fade-in">
-      {/* Scanner Card */}
       <div className="card overflow-hidden">
         <div className="p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">
-            Scan Barcode
-          </h2>
-          
-          {!isScanning ? (
-            <div className="text-center py-12">
-              <div className="w-20 h-20 mx-auto mb-4 text-gray-300">
-                <Camera className="w-full h-full" />
-              </div>
-              <p className="text-gray-600 mb-6">
-                Point your camera at a product barcode
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Scansiona Barcode</h2>
+
+          {IS_NATIVE ? (
+            <div className="text-center py-10">
+              <ScanLine className="w-20 h-20 mx-auto mb-4 text-indigo-300" />
+              <p className="text-gray-600 mb-2 font-medium">
+                Scatta una foto al codice a barre del prodotto
+              </p>
+              <p className="text-sm text-gray-400 mb-6">
+                Avvicinati, tieni fermo e assicurati che il codice sia ben illuminato
               </p>
               <button
-                onClick={startScanner}
-                disabled={isLoading}
+                onClick={scanWithNativeCamera}
+                disabled={isCapturing || isLoading}
                 className="btn btn-primary"
               >
-                <Camera className="w-5 h-5" />
-                <span>Start Camera</span>
+                {isCapturing ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Camera className="w-5 h-5" />
+                )}
+                <span>{isCapturing ? 'Apertura fotocamera...' : 'Apri Fotocamera'}</span>
               </button>
             </div>
           ) : (
-            <div>
-              <div id="reader" className="mb-4"></div>
-              <button
-                onClick={stopScanner}
-                className="btn btn-danger w-full"
-              >
-                <X className="w-5 h-5" />
-                <span>Stop Scanning</span>
-              </button>
-            </div>
+            !isScanning ? (
+              <div className="text-center py-12">
+                <Camera className="w-20 h-20 mx-auto mb-4 text-gray-300" />
+                <p className="text-gray-600 mb-6">Punta la fotocamera verso il barcode</p>
+                <button onClick={startWebScanner} disabled={isLoading} className="btn btn-primary">
+                  <Camera className="w-5 h-5" />
+                  <span>Avvia Fotocamera</span>
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div id="reader" className="mb-4" />
+                <button onClick={stopWebScanner} className="btn btn-danger w-full">
+                  <X className="w-5 h-5" />
+                  <span>Stop</span>
+                </button>
+              </div>
+            )
           )}
 
           {error && (
             <div className="mt-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
-              <div className="flex items-start gap-3">
-                <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                <div>
-                  <p className="text-sm font-semibold text-red-800 mb-1">Camera Access Issue</p>
-                  <p className="text-sm text-red-700">{error}</p>
-                  {error.includes('in use') && (
-                    <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-600">
-                      <p className="font-semibold mb-1">Try this:</p>
-                      <ul className="list-disc ml-4 space-y-1">
-                        <li>Close all other apps and browser tabs</li>
-                        <li>Restart your browser</li>
-                        <li>If issue persists, restart your device</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <p className="text-sm font-semibold text-red-800 mb-1">Attenzione</p>
+              <p className="text-sm text-red-700">{error}</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Manual Entry Card */}
       <div className="card">
         <div className="p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">
-            Enter Barcode Manually
-          </h2>
-          
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Inserisci Codice Manualmente</h2>
           <div className="flex gap-3">
             <input
               type="text"
               value={manualBarcode}
               onChange={(e) => setManualBarcode(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Enter barcode number"
+              onKeyPress={(e) => e.key === 'Enter' && handleManualSearch()}
+              placeholder="Es. 3017620422003"
               className="input flex-1"
               disabled={isLoading}
+              inputMode="numeric"
             />
             <button
               onClick={handleManualSearch}
               disabled={isLoading || !manualBarcode.trim()}
               className="btn btn-primary"
             >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <Search className="w-5 h-5" />
-              )}
+              {isLoading
+                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <Search className="w-5 h-5" />
+              }
             </button>
           </div>
-
-          <div className="mt-3 flex items-start gap-2 text-sm text-gray-600">
+          <div className="mt-3 flex items-start gap-2 text-sm text-gray-500">
             <Lightbulb className="w-4 h-4 mt-0.5 text-yellow-500 flex-shrink-0" />
-            <div>
-              <span className="font-medium">Try:</span>{' '}
-              <code className="bg-gray-100 px-2 py-0.5 rounded text-xs font-mono">
-                3017620422003
-              </code>
-              {' '}(Nutella)
-            </div>
+            <span>Prova con <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">3017620422003</code> (Nutella)</span>
           </div>
         </div>
       </div>
