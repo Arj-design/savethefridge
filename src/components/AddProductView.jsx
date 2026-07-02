@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Calendar, Bell, CheckCircle } from 'lucide-react';
+import { Plus, Calendar, Bell, CheckCircle, PenLine } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { getTodayString } from '../utils/productUtils';
 
@@ -7,6 +7,7 @@ export default function AddProductView() {
   const { scannedProduct, addProduct, setScannedProduct, setCurrentView } = useApp();
   const [expiryDate, setExpiryDate] = useState('');
   const [reminderDays, setReminderDays] = useState(3);
+  const [quantity, setQuantity] = useState(1);
 
   if (!scannedProduct) {
     setCurrentView('fridge');
@@ -15,130 +16,150 @@ export default function AddProductView() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
     if (!expiryDate) return;
-
-    const newProduct = {
+    addProduct({
       ...scannedProduct,
       expiryDate,
       reminderDays: parseInt(reminderDays),
-      addedDate: new Date().toISOString()
-    };
-
-    addProduct(newProduct);
+      quantity: parseInt(quantity),
+      addedDate: new Date().toISOString(),
+    });
     setScannedProduct(null);
     setCurrentView('fridge');
   };
 
   const handleCancel = () => {
     setScannedProduct(null);
-    setCurrentView('fridge');
+    setCurrentView('scan');
   };
 
   return (
     <div className="space-y-5 animate-fade-in">
-      {/* Product Info Card */}
+
+      {/* Info prodotto */}
       <div className="card overflow-hidden">
-        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-5 flex items-center gap-3">
-          <CheckCircle className="w-6 h-6" />
-          <h2 className="text-lg font-bold">Product Found!</h2>
+        <div className={`text-white p-5 flex items-center gap-3 ${scannedProduct.isManual ? 'bg-gradient-to-r from-amber-400 to-orange-500' : 'bg-gradient-to-r from-indigo-500 to-purple-600'}`}>
+          {scannedProduct.isManual
+            ? <PenLine className="w-6 h-6" />
+            : <CheckCircle className="w-6 h-6" />
+          }
+          <h2 className="text-lg font-bold">
+            {scannedProduct.isManual ? 'Prodotto manuale' : 'Prodotto trovato!'}
+          </h2>
         </div>
-        
+
         <div className="p-6">
           {scannedProduct.image && (
             <div className="mb-5">
-              <img 
-                src={scannedProduct.image} 
+              <img
+                src={scannedProduct.image}
                 alt={scannedProduct.name}
                 className="w-full h-48 object-contain bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4"
               />
             </div>
           )}
-          
-          <h3 className="text-xl font-bold text-gray-900 mb-3">
-            {scannedProduct.name}
-          </h3>
-          
+
+          <h3 className="text-xl font-bold text-gray-900 mb-3">{scannedProduct.name}</h3>
+
           <div className="space-y-2 text-sm text-gray-600">
-            <div className="flex">
-              <span className="font-semibold text-gray-700 w-24">Brand:</span>
-              <span>{scannedProduct.brand}</span>
-            </div>
-            <div className="flex">
-              <span className="font-semibold text-gray-700 w-24">Quantity:</span>
-              <span>{scannedProduct.quantity}</span>
-            </div>
-            <div className="flex">
-              <span className="font-semibold text-gray-700 w-24">Barcode:</span>
-              <span className="font-mono text-xs">{scannedProduct.barcode}</span>
-            </div>
+            {scannedProduct.brand && (
+              <div className="flex">
+                <span className="font-semibold text-gray-700 w-24">Marca:</span>
+                <span>{scannedProduct.brand}</span>
+              </div>
+            )}
+            {scannedProduct.barcode && (
+              <div className="flex">
+                <span className="font-semibold text-gray-700 w-24">Barcode:</span>
+                <span className="font-mono text-xs">{scannedProduct.barcode}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Expiration Form Card */}
+      {/* Form */}
       <form onSubmit={handleSubmit} className="card">
         <div className="p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-5">
-            Set Expiration Details
-          </h3>
-          
+          <h3 className="text-lg font-bold text-gray-900 mb-5">Dettagli prodotto</h3>
+
           <div className="space-y-5">
-            {/* Expiry Date */}
+
+            {/* Quantità — PRIMA della scadenza */}
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                <Plus className="w-4 h-4" />
+                Quantità
+              </label>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                  className="w-11 h-11 rounded-xl bg-gray-100 hover:bg-gray-200 text-2xl font-bold text-gray-700 transition-colors flex items-center justify-center"
+                >
+                  −
+                </button>
+                <span className="text-3xl font-bold text-gray-900 w-10 text-center">
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity(q => Math.min(99, q + 1))}
+                  className="w-11 h-11 rounded-xl bg-gray-100 hover:bg-gray-200 text-2xl font-bold text-gray-700 transition-colors flex items-center justify-center"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* Data di scadenza */}
             <div>
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                 <Calendar className="w-4 h-4" />
-                Expiration Date *
+                Data di scadenza *
               </label>
               <input
                 type="date"
                 value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
+                onChange={e => setExpiryDate(e.target.value)}
                 min={getTodayString()}
                 required
                 className="input"
               />
             </div>
 
-            {/* Reminder Days */}
+            {/* Avviso */}
             <div>
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                 <Bell className="w-4 h-4" />
-                Remind Me (days before)
+                Avvisami (giorni prima)
               </label>
               <select
                 value={reminderDays}
-                onChange={(e) => setReminderDays(e.target.value)}
-                className="input appearance-none bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNiA5TDEgNGgxMHoiIGZpbGw9IiM2YjcyODAiLz48L3N2Zz4=')] bg-[length:12px] bg-[position:right_12px_center] bg-no-repeat pr-10"
+                onChange={e => setReminderDays(e.target.value)}
+                className="input"
               >
-                <option value="1">1 day before</option>
-                <option value="2">2 days before</option>
-                <option value="3">3 days before</option>
-                <option value="5">5 days before</option>
-                <option value="7">7 days before</option>
-                <option value="10">10 days before</option>
-                <option value="14">14 days before</option>
+                <option value="1">1 giorno prima</option>
+                <option value="2">2 giorni prima</option>
+                <option value="3">3 giorni prima</option>
+                <option value="5">5 giorni prima</option>
+                <option value="7">7 giorni prima</option>
+                <option value="10">10 giorni prima</option>
+                <option value="14">14 giorni prima</option>
               </select>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-3">
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="btn btn-secondary flex-1"
-              >
-                Cancel
+            {/* Bottoni */}
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={handleCancel} className="btn btn-secondary flex-1">
+                Annulla
               </button>
-              <button
-                type="submit"
-                disabled={!expiryDate}
-                className="btn btn-primary flex-1"
-              >
+              <button type="submit" disabled={!expiryDate} className="btn btn-primary flex-1">
                 <Plus className="w-5 h-5" />
-                <span>Add to Fridge</span>
+                <span>Aggiungi al frigo</span>
               </button>
             </div>
+
           </div>
         </div>
       </form>
